@@ -127,16 +127,17 @@ public class SpeakerRouter extends AbstractBolt {
     private void proxySpeaker(Tuple input, Message message) throws PipelineException {
         if (active) {
             if (message instanceof InfoMessage) {
-                proxy(input, ((InfoMessage) message).getData());
+                proxy(input, ((InfoMessage) message));
             } else {
                 log.error("Do not proxy speaker message - unexpected message type \"{}\"", message.getClass());
             }
         }
     }
 
-    private void proxy(Tuple input, InfoData payload) throws PipelineException {
+    private void proxy(Tuple input, InfoMessage envelope) throws PipelineException {
+        InfoData payload = envelope.getData();
         if (!proxyUnconditionally(input, payload)) {
-            if (!proxyOnlyWhenActive(input, payload)) {
+            if (!proxyOnlyWhenActive(input, envelope)) {
                 log.error("Do not proxy speaker message - unexpected message payload \"{}\"", payload.getClass());
             }
         }
@@ -168,7 +169,8 @@ public class SpeakerRouter extends AbstractBolt {
         return true;
     }
 
-    private boolean proxyOnlyWhenActive(Tuple input, InfoData payload) throws PipelineException {
+    private boolean proxyOnlyWhenActive(Tuple input, InfoMessage envelope) throws PipelineException {
+        InfoData payload = envelope.getData();
         if (!active) {
             log.debug("Because the topology is inactive ignoring message: {}", payload);
         } else if (payload instanceof IslInfoData) {
@@ -185,8 +187,10 @@ public class SpeakerRouter extends AbstractBolt {
         } else if (payload instanceof PortInfoData) {
             emit(input, makeDefaultTuple(input, new SwitchPortEventCommand((PortInfoData) payload)));
         } else if (payload instanceof NetworkDumpSwitchData) {
+            NetworkDumpSwitchData networkDumpEntry = (NetworkDumpSwitchData) payload;
             emit(input, makeDefaultTuple(
-                    input, new SwitchManagedEventCommand(((NetworkDumpSwitchData) payload).getSwitchView())));
+                    input,
+                    new SwitchManagedEventCommand(networkDumpEntry.getSwitchView(), networkDumpEntry.getDumpId())));
         } else if (payload instanceof UnmanagedSwitchNotification) {
             emit(input, makeDefaultTuple(
                     input, new SwitchUnmanagedEventCommand(((UnmanagedSwitchNotification) payload).getSwitchId())));
