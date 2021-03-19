@@ -32,7 +32,6 @@ import org.apache.kafka.clients.producer.ProducerRecord
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
-import spock.lang.Ignore
 import spock.lang.See
 import spock.lang.Unroll
 
@@ -244,7 +243,6 @@ class SwitchSyncSpec extends BaseSpecification {
 
     @Tidy
     @Tags(HARDWARE)
-    @Ignore("https://github.com/telstra/open-kilda/issues/3021")
     def "Able to synchronize switch with 'vxlan' rule(install missing rules and meters)"() {
         given: "Two active not neighboring Noviflow switches"
         def switchPair = topologyHelper.getAllNotNeighboringSwitchPairs().find { swP ->

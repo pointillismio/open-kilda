@@ -42,7 +42,6 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.web.client.HttpClientErrorException
-import spock.lang.Ignore
 import spock.lang.Narrative
 import spock.lang.Unroll
 
@@ -61,7 +60,6 @@ class VxlanFlowV2Spec extends HealthCheckSpecification {
     Provider<TraffExamService> traffExamProvider
 
     @Tidy
-    @Ignore("https://github.com/telstra/open-kilda/issues/2995")
     @Unroll
     @Tags(HARDWARE)
     @IterationTags([

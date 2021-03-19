@@ -30,7 +30,6 @@ import org.openkilda.messaging.info.event.PathNode
 import org.openkilda.messaging.info.rule.FlowEntry
 import org.openkilda.messaging.payload.flow.FlowState
 import org.openkilda.model.FlowEncapsulationType
-import org.openkilda.model.SwitchId
 import org.openkilda.model.cookie.Cookie
 import org.openkilda.model.cookie.CookieBase.CookieType
 import org.openkilda.northbound.dto.v2.flows.FlowEndpointV2
@@ -40,9 +39,7 @@ import org.openkilda.testing.service.traffexam.TraffExamService
 import org.openkilda.testing.tools.FlowTrafficExamBuilder
 
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.client.HttpClientErrorException
-import spock.lang.Ignore
 import spock.lang.Narrative
 import spock.lang.Shared
 import spock.lang.Unroll
@@ -816,7 +813,6 @@ class FlowRulesSpec extends HealthCheckSpecification {
 
     @Tidy
     @Tags([HARDWARE, LOW_PRIORITY, SMOKE_SWITCHES])//uses legacy 'rules validation', has a switchValidate analog in SwitchValidationSpec
-    @Ignore("https://github.com/telstra/open-kilda/issues/3021")
     def "Able to synchronize rules for a flow with VXLAN encapsulation"() {
         given: "Two active not neighboring Noviflow switches"
         def switchPair = topologyHelper.getAllNotNeighboringSwitchPairs().find { swP ->

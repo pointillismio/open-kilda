@@ -40,7 +40,6 @@ import org.apache.kafka.clients.producer.ProducerRecord
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
-import spock.lang.Ignore
 import spock.lang.Narrative
 import spock.lang.See
 import spock.lang.Unroll
@@ -689,7 +688,6 @@ misconfigured"
     }
 
     @Tags(HARDWARE)
-    @Ignore("https://github.com/telstra/open-kilda/issues/3021")
     def "Able to validate and sync a switch with missing 'vxlan' ingress/transit/egress rule + meter"() {
         given: "Two active not neighboring VXLAN supported switches"
         def switchPair = topologyHelper.getAllNotNeighboringSwitchPairs().find { swP ->
