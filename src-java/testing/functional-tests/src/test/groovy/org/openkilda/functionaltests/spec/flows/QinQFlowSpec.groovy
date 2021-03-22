@@ -65,8 +65,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
         qinqFlow.allocateProtectedPath = true
         def response = flowHelperV2.addFlow(qinqFlow)
 
-        println(response)
-
         then: "Response contains correct info about vlanIds"
         /** System doesn't allow to create a flow with innerVlan and without vlan at the same time.
          * for e.g.: when you create a flow with the following params:
@@ -82,8 +80,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
 
         def qinqFlowNb = northbound.getFlow(qinqFlow.flowId)
 
-        println(qinqFlowNb)
-
         and: "Flow is really created with requested vlanIds"
         with(qinqFlowNb) {
             it.source.vlanId == (srcVlanId ? srcVlanId : srcInnerVlanId)
@@ -92,16 +88,12 @@ class QinQFlowSpec extends HealthCheckSpecification {
             it.destination.innerVlanId == (dstVlanId ? dstInnerVlanId : 0)
         }
 
-        println(3)
-
         and: "Flow is valid and pingable"
         northbound.validateFlow(qinqFlow.flowId).each { assert it.asExpected }
         verifyAll(northbound.pingFlow(qinqFlow.flowId, new PingInput())) {
             it.forward.pingSuccess
             it.reverse.pingSuccess
         }
-
-        println(4)
 
         and: "The flow allows traffic"
         def traffExam = traffExamProvider.get()
@@ -115,8 +107,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
             }
         }
 
-        println(5)
-
         and: "Involved switches pass switch validation"
         def involvedSwitchesFlow1 = pathHelper.getInvolvedSwitches(
                 pathHelper.convert(northbound.getFlowPath(qinqFlow.flowId))
@@ -129,8 +119,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
             }
         }
 
-        println(6)
-
         when: "Create a vlan flow on the same port as QinQ flow"
         def vlanFlow = flowHelper.randomFlow(swP).tap {
             it.source.portNumber = qinqFlow.source.portNumber
@@ -140,14 +128,10 @@ class QinQFlowSpec extends HealthCheckSpecification {
         }
         flowHelper.addFlow(vlanFlow)
 
-        println(7)
-
         then: "Both existing flows are valid"
         [qinqFlow.flowId, vlanFlow.id].each {
             northbound.validateFlow(it).each { assert it.asExpected }
         }
-
-        println(8)
 
         and: "Involved switches pass switch validation"
         def involvedSwitchesFlow2 = pathHelper.getInvolvedSwitches(pathHelper.convert(northbound.getFlowPath(vlanFlow.id)))
@@ -159,8 +143,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
             }
         }
 
-        println(9)
-
         and: "Both flows are pingable"
         [qinqFlow.flowId, vlanFlow.id].each {
             verifyAll(northbound.pingFlow(it, new PingInput())) {
@@ -168,8 +150,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
                 it.reverse.pingSuccess
             }
         }
-
-        println(10)
 
         then: "Both flows allow traffic"
         def examSimpleFlow = new FlowTrafficExamBuilder(topology, traffExam)
@@ -183,8 +163,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
                     }
         }
 
-        println(11)
-
         when: "Update the QinQ flow(outer/inner vlans)"
         def updateResponse = flowHelperV2.updateFlow(qinqFlow.flowId, qinqFlow.tap {
             qinqFlow.source.vlanId = vlanFlow.source.vlanId
@@ -192,8 +170,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
             qinqFlow.destination.vlanId = vlanFlow.destination.vlanId
             qinqFlow.destination.innerVlanId = vlanFlow.source.vlanId
         })
-
-        println(12)
 
         then: "Update response contains correct info about innerVlanIds"
         with(updateResponse) {
@@ -203,8 +179,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
             it.destination.innerVlanId == vlanFlow.source.vlanId
         }
 
-        println(13)
-
         and: "Flow is really updated"
         with(northbound.getFlow(qinqFlow.flowId)) {
             it.source.vlanId == vlanFlow.source.vlanId
@@ -213,11 +187,8 @@ class QinQFlowSpec extends HealthCheckSpecification {
             it.destination.innerVlanId == vlanFlow.source.vlanId
         }
 
-        println(14)
-
         and: "Flow history shows actual info into stateBefore and stateAfter sections"
         def flowHistory = northbound.getFlowHistory(qinqFlow.flowId)
-
         with(flowHistory.last().dumps.find { it.type == "stateBefore" }){
             it.sourceVlan == (srcVlanId ? srcVlanId : srcInnerVlanId)
             it.sourceInnerVlan == (srcVlanId ? srcInnerVlanId : 0)
@@ -231,8 +202,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
             it.destinationInnerVlan == vlanFlow.source.vlanId
         }
 
-        println(15)
-
         then: "Both existing flows are still valid and pingable"
         [qinqFlow.flowId, vlanFlow.id].each {
             northbound.validateFlow(it).each { assert it.asExpected }
@@ -245,8 +214,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
             }
         }
 
-        println(16)
-
         when: "Delete the flows"
         [qinqFlow.flowId, vlanFlow.id].each { flowHelperV2.deleteFlow(it) }
 
@@ -256,8 +223,6 @@ class QinQFlowSpec extends HealthCheckSpecification {
                 assert northbound.getSwitchRules(sw.dpId).flowEntries*.cookie.sort() == sw.defaultCookies.sort()
             }
         }
-
-        println(17)
 
         and: "Shared rule of flow is deleted"
         [swP.src.dpId, swP.dst.dpId].each { swId ->
@@ -874,7 +839,7 @@ class QinQFlowSpec extends HealthCheckSpecification {
         northbound.deleteSwitchRules(swP.src.dpId, DeleteRulesAction.DROP_ALL_ADD_DEFAULTS)
 
         then: "System detects missing rules on the src switch"
-        def amountOfServer42Rules = northbound.getSwitchProperties(swP.src.dpId).server42FlowRtt ? 1 : 0
+        def amountOfServer42Rules = northbound.getSwitchProperties(swP.src.dpId).server42FlowRtt ? 2 : 0
         with(northbound.validateSwitch(swP.src.dpId).rules) {
             it.excess.empty
             it.excessHex.empty
