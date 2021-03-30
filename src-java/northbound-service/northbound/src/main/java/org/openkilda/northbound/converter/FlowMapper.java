@@ -168,6 +168,7 @@ public abstract class FlowMapper {
     @Mapping(target = "maxLatencyTier2",
             expression = "java(request.getMaxLatencyTier2() != null ? request.getMaxLatencyTier2() * 1000000L : null)")
     @Mapping(target = "loopSwitchId", ignore = true)
+    @Mapping(target = "rtrtktest", ignore = true)
     public abstract FlowRequest toFlowRequest(FlowRequestV2 request);
 
     @Mapping(target = "flowId", source = "id")
@@ -182,6 +183,7 @@ public abstract class FlowMapper {
             expression = "java(payload.getMaxLatency() != null ? payload.getMaxLatency() * 1000000L : null)")
     @Mapping(target = "maxLatencyTier2", ignore = true)
     @Mapping(target = "loopSwitchId", ignore = true)
+    @Mapping(target = "rtrtktest", ignore = true)
     public abstract FlowRequest toFlowRequest(FlowPayload payload);
 
     @Mapping(target = "outerVlanId", source = "vlanId")

@@ -43,4 +43,7 @@ public class DiscoPacketSendingConfirmation extends InfoData {
         this.endpoint = endpoint;
         this.packetId = packetId;
     }
+
+    @JsonProperty("rtrtktest")
+    private boolean rtrtktest = false;
 }

@@ -123,4 +123,10 @@ public class PortInfoData extends InfoData {
         this.state = state;
         this.enabled = enabled;
     }
+
+    /**
+     * test.
+     */
+    @JsonProperty("rtrtktest")
+    private boolean rtrtktest;
 }

@@ -56,6 +56,7 @@ public abstract class RequestedFlowMapper {
     @Mapping(target = "type", ignore = true)
     @Mapping(target = "bulkUpdateFlowIds", ignore = true)
     @Mapping(target = "doNotRevert", ignore = true)
+    @Mapping(target = "rtrtktest", ignore = true)
     public abstract FlowRequest toFlowRequest(Flow flow);
 
     public SwitchId map(String value) {

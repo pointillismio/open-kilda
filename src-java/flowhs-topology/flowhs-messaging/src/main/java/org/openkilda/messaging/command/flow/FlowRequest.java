@@ -77,4 +77,7 @@ public class FlowRequest extends CommandData {
         UPDATE,
         DELETE
     }
+
+    @JsonProperty("rtrtktest")
+    boolean rtrtktest;
 }
