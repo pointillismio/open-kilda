@@ -91,7 +91,7 @@ class StormLcmSpec extends HealthCheckSpecification {
         flows.each { flowHelper.deleteFlow(it.id) }
     }
 
-    @Ignore("issue https://github.com/telstra/open-kilda/issues/2363")
+    @Tags(LOW_PRIORITY)
     def "System's able to fail an ISL if switches on both ends go offline during restart of network topology"() {
         when: "Kill network topology"
         wfmManipulator.killTopology("network")
@@ -107,7 +107,7 @@ class StormLcmSpec extends HealthCheckSpecification {
         TimeUnit.SECONDS.sleep(45) //after deploy topology needs more time to actually begin working
 
         then: "Switches are recognized as being deactivated"
-        Wrappers.wait(WAIT_OFFSET) {
+        Wrappers.wait(180) { //can take up to 3 network dumps
             assert northbound.getSwitch(islUnderTest.srcSwitch.dpId).state == SwitchChangeType.DEACTIVATED
             assert northbound.getSwitch(islUnderTest.dstSwitch.dpId).state == SwitchChangeType.DEACTIVATED
         }
@@ -119,16 +119,14 @@ class StormLcmSpec extends HealthCheckSpecification {
             assert islUtils.getIslInfo(allIsls, islUnderTest.reversed).get().state == IslChangeType.FAILED
         }
 
-        and: "Cleanup: restore switch and failed ISLs"
-        lockKeeper.reviveSwitch(islUnderTest.srcSwitch, srcBlockData)
-        lockKeeper.reviveSwitch(islUnderTest.dstSwitch, dstBlockData)
+        cleanup:
+        !networkDeployed && wfmManipulator.deployTopology("network")
+        srcBlockData && lockKeeper.reviveSwitch(islUnderTest.srcSwitch, srcBlockData)
+        dstBlockData && lockKeeper.reviveSwitch(islUnderTest.dstSwitch, dstBlockData)
         Wrappers.wait(WAIT_OFFSET + discoveryInterval) {
             def allIsls = northbound.getAllLinks()
             assert islUtils.getIslInfo(allIsls, islUnderTest).get().state == IslChangeType.DISCOVERED
             assert islUtils.getIslInfo(allIsls, islUnderTest.reversed).get().state == IslChangeType.DISCOVERED
         }
-
-        cleanup:
-        !networkDeployed && wfmManipulator.deployTopology("network")
     }
 }
