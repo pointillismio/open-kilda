@@ -15,20 +15,16 @@
 
 package org.openkilda.wfm.kafka;
 
-import static java.lang.String.format;
-
 import org.openkilda.messaging.Message;
-import org.openkilda.messaging.error.DeserializationErrorMessage;
 import org.openkilda.messaging.error.ErrorData;
+import org.openkilda.messaging.error.ErrorMessage;
 import org.openkilda.messaging.error.ErrorType;
 import org.openkilda.wfm.topology.utils.SerializationUtils;
 
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.serialization.Deserializer;
 
 import java.io.IOException;
-import java.nio.charset.Charset;
 import java.util.Map;
 import java.util.UUID;
 
@@ -42,15 +38,15 @@ public class MessageDeserializer implements Deserializer<Message> {
 
     @Override
     public Message deserialize(String topic, byte[] data) {
+        Class<Message> base = Message.class;
         try {
-            return SerializationUtils.MAPPER.readValue(data, Message.class);
+            return SerializationUtils.MAPPER.readValue(data, base);
         } catch (IOException e) {
-            String message = StringUtils.toEncodedString(data, Charset.defaultCharset());
-            if (log.isDebugEnabled()) {
-                log.debug(format("Failed to deserialize data: %s from topic %s", message, topic), e);
-            }
-            ErrorData errorData = new ErrorData(ErrorType.INTERNAL_ERROR, "Failed to deserialize message", message);
-            return new DeserializationErrorMessage(errorData, System.currentTimeMillis(), UUID.randomUUID().toString());
+            DeserializationErrorReport errorReport = DeserializationErrorReport.createFromException(
+                    topic, base, data, e);
+            return new ErrorMessage(
+                    new ErrorData(ErrorType.INTERNAL_ERROR, errorReport.getErrorMessage(), errorReport.getRawSource()),
+                    System.currentTimeMillis(), UUID.randomUUID().toString());
         }
     }
 
