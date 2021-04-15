@@ -2,6 +2,7 @@ package org.openkilda.functionaltests.spec.flows
 
 import static org.junit.Assume.assumeTrue
 import static org.openkilda.functionaltests.extension.tags.Tag.LOW_PRIORITY
+import static org.openkilda.functionaltests.helpers.FlowHistoryConstants.REROUTE_FAIL
 import static org.openkilda.functionaltests.helpers.FlowHistoryConstants.REROUTE_SUCCESS
 import static org.openkilda.functionaltests.helpers.Wrappers.wait
 import static org.openkilda.messaging.info.event.IslChangeType.DISCOVERED
@@ -10,6 +11,7 @@ import static org.openkilda.testing.Constants.WAIT_OFFSET
 import org.openkilda.functionaltests.HealthCheckSpecification
 import org.openkilda.functionaltests.extension.failfast.Tidy
 import org.openkilda.functionaltests.extension.tags.Tags
+import org.openkilda.functionaltests.helpers.Wrappers
 import org.openkilda.functionaltests.helpers.model.SwitchPair
 import org.openkilda.messaging.error.MessageError
 import org.openkilda.messaging.info.event.PathNode
@@ -19,6 +21,7 @@ import org.openkilda.testing.model.topology.TopologyDefinition.Isl
 
 import org.springframework.http.HttpStatus
 import org.springframework.web.client.HttpClientErrorException
+import spock.lang.Ignore
 import spock.lang.See
 import spock.lang.Shared
 import spock.lang.Unroll
@@ -202,7 +205,7 @@ class MaxLatencySpec extends HealthCheckSpecification {
     }
 
     @Tidy
-    def "Able to reroute a flow if maxLatencyTier2 > pathLatency > maxLatency"() {
+    def "Able to reroute a MAX_LATENCY flow if maxLatencyTier2 > pathLatency > maxLatency"() {
         given: "2 non-overlapping paths with 10 and 15 latency"
         setLatencyForPaths(10, 15)
 
@@ -232,6 +235,101 @@ class MaxLatencySpec extends HealthCheckSpecification {
                     " building the path was used"
         }
         pathHelper.convert(northbound.getFlowPath(flow.flowId)) == alternativePath
+
+        cleanup:
+        flow && flowHelperV2.deleteFlow(flow.flowId)
+        if (islToBreak) {
+            antiflap.portUp(islToBreak.srcSwitch.dpId, islToBreak.srcPort)
+            wait(discoveryInterval + WAIT_OFFSET) { assert islUtils.getIslInfo(islToBreak).get().state == DISCOVERED }
+        }
+        database.resetCosts()
+    }
+
+    @Tidy
+    def "Able to create DEGRADED flow with LATENCY strategy if flowPath > max_latency"() {
+        given: "2 non-overlapping paths with 11 and 15 latency"
+        setLatencyForPaths(11, 15)
+
+        when: "Create a flow, maxLatency 5 and maxLatencyTier2 10"
+        def flow = flowHelperV2.randomFlow(switchPair).tap {
+            allocateProtectedPath = false
+            maxLatency = 9
+            maxLatencyTier2 = 16
+            pathComputationStrategy = PathComputationStrategy.LATENCY.toString()
+        }
+        northboundV2.addFlow(flow)
+
+        then: "Flow is created in DEGRADED state because flowPath doesn't satisfy max_latency value"
+        wait(WAIT_OFFSET) {
+            def flowInfo =  northboundV2.getFlow(flow.flowId)
+            assert flowInfo.status == FlowState.DEGRADED.toString()
+            assert flowInfo.statusInfo == "An alternative way (back up strategy or max_latency_tier2 value) of" +
+                    " building the path was used."
+        }
+        def path = northbound.getFlowPath(flow.flowId)
+        pathHelper.convert(path) == mainPath
+
+        cleanup:
+        flow && flowHelperV2.deleteFlow(flow.flowId)
+    }
+
+    @Tidy
+    def "Able to create a flow with LATENCY strategy when max_latency > pathLatency > max_latency_tier2"() {
+        given: "2 non-overlapping paths with 11 and 15 latency"
+        setLatencyForPaths(11, 15)
+
+        when: "Create a flow, maxLatency 5 and maxLatencyTier2 10"
+        def flow = flowHelperV2.randomFlow(switchPair).tap {
+            allocateProtectedPath = false
+            maxLatency = 19
+            maxLatencyTier2 = 8
+            pathComputationStrategy = PathComputationStrategy.LATENCY.toString()
+        }
+        northboundV2.addFlow(flow)
+
+        then: "Flow is created in UP"
+        wait(WAIT_OFFSET) { assert northboundV2.getFlowStatus(flow.flowId).status == FlowState.UP }
+        def path = northbound.getFlowPath(flow.flowId)
+        pathHelper.convert(path) == mainPath
+
+        cleanup:
+        flow && flowHelperV2.deleteFlow(flow.flowId)
+    }
+
+    @Tidy
+    @Ignore("recheck and delete")
+    def "Not able to reroute a LATENCY flow if pathLatency > maxLatencyTier2"() {
+        given: "2 non-overlapping paths with 10 and 15 latency"
+        setLatencyForPaths(10, 15)
+
+        when: "Create a flow with max_latency 19 and max_latency_tier2 13"
+        def flow = flowHelperV2.randomFlow(switchPair).tap {
+            allocateProtectedPath = false
+            maxLatency = 19
+            maxLatencyTier2 = 13
+            pathComputationStrategy = PathComputationStrategy.LATENCY.toString()
+        }
+        flowHelperV2.addFlow(flow)
+        assert pathHelper.convert(northbound.getFlowPath(flow.flowId)) == mainPath
+
+        and: "Init auto reroute (bring port down on the src switch)"
+        def islToBreak = pathHelper.getInvolvedIsls(mainPath).first()
+        setLatencyForPaths(10, 15)  //delete: just to be sure that ISL latency is not changed
+        antiflap.portDown(islToBreak.srcSwitch.dpId, islToBreak.srcPort)
+
+        then: "Flow is not rerouted and goes to the DOWN state"
+        wait(rerouteDelay + WAIT_OFFSET) {
+            setLatencyForPaths(10, 15)  //delete: just to be sure that ISL latency is not changed
+//            def flowHistory = northbound.getFlowHistory(flow.flowId).last()
+//            assert flowHistory.payload.last().action == REROUTE_FAIL
+            assert northboundV2.getFlowStatus(flow.flowId).status == FlowState.DOWN
+        }
+        Wrappers.timedLoop(WAIT_OFFSET) { //delete timeLoop
+            setLatencyForPaths(10, 15)
+            assert pathHelper.convert(northbound.getFlowPath(flow.flowId)) == mainPath
+            sleep(2000)
+        }
+
 
         cleanup:
         flow && flowHelperV2.deleteFlow(flow.flowId)
