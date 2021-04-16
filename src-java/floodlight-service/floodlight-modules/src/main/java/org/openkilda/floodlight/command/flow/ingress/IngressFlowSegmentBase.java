@@ -35,6 +35,7 @@ import org.openkilda.messaging.MessageContext;
 import org.openkilda.model.FlowEndpoint;
 import org.openkilda.model.MeterConfig;
 import org.openkilda.model.MeterId;
+import org.openkilda.model.MirrorConfig;
 import org.openkilda.model.SwitchFeature;
 import org.openkilda.model.SwitchId;
 import org.openkilda.model.of.MeterSchema;
@@ -64,6 +65,8 @@ public abstract class IngressFlowSegmentBase extends FlowSegmentCommand {
     protected final SwitchId egressSwitchId;
     protected final RulesContext rulesContext;
 
+    private MeterId effectiveMeterId;
+
     // operation data
     @Getter(AccessLevel.PROTECTED)
     @Setter(AccessLevel.PROTECTED)
@@ -72,8 +75,8 @@ public abstract class IngressFlowSegmentBase extends FlowSegmentCommand {
     IngressFlowSegmentBase(
             MessageContext messageContext, SwitchId switchId, UUID commandId, FlowSegmentMetadata metadata,
             @NonNull FlowEndpoint endpoint, MeterConfig meterConfig, @NonNull SwitchId egressSwitchId,
-            RulesContext rulesContext) {
-        super(messageContext, switchId, commandId, metadata);
+            RulesContext rulesContext, MirrorConfig mirrorConfig) {
+        super(messageContext, switchId, commandId, metadata, mirrorConfig);
         this.endpoint = endpoint;
         this.meterConfig = meterConfig;
         this.egressSwitchId = egressSwitchId;
@@ -92,33 +95,56 @@ public abstract class IngressFlowSegmentBase extends FlowSegmentCommand {
     protected abstract void setupFlowModFactory();
 
     protected CompletableFuture<FlowSegmentReport> makeInstallPlan(SpeakerCommandProcessor commandProcessor) {
-        CompletableFuture<MeterId> future = CompletableFuture.completedFuture(null);
+        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
         if (meterConfig != null && rulesContext.isUpdateMeter()) {
             future = planMeterInstall(commandProcessor)
-                    .thenApply(this::handleMeterReport);
+                    .thenCompose(this::handleMeterReport);
         }
-        return future.thenCompose(this::planOfFlowsInstall);
+
+        if (mirrorConfig != null) {
+            future.thenCompose(e -> planGroupDryRun(commandProcessor))
+                    .thenCompose(this::handleGroupReport)
+                    .thenCompose(e -> planGroupRemove(commandProcessor));
+
+            if (!mirrorConfig.isCleanExcessGroup()) {
+                future.thenCompose(e -> planGroupInstall(commandProcessor))
+                        .thenCompose(this::handleGroupReport);
+            }
+        }
+        return future.thenCompose(e -> planOfFlowsInstall());
     }
 
     protected CompletableFuture<FlowSegmentReport> makeRemovePlan(SpeakerCommandProcessor commandProcessor) {
-        CompletableFuture<MeterId> future = CompletableFuture.completedFuture(null);
+        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
         if (meterConfig != null) {
             future = planMeterDryRun(commandProcessor)
-                    .thenApply(this::handleMeterReport);
+                    .thenCompose(this::handleMeterReport);
         }
 
-        return future.thenCompose(this::planOfFlowsRemove)
-                .thenCompose(effectiveMeterId -> planMeterRemove(commandProcessor, effectiveMeterId))
+        if (mirrorConfig != null) {
+            future.thenCompose(e -> planGroupDryRun(commandProcessor))
+                    .thenCompose(this::handleGroupReport);
+        }
+
+        return future.thenCompose(e -> planOfFlowsRemove())
+                .thenCompose(e -> planMeterRemove(commandProcessor))
+                .thenCompose(e -> planGroupRemove(commandProcessor))
                 .thenApply(ignore -> makeSuccessReport());
     }
 
     protected CompletableFuture<FlowSegmentReport> makeVerifyPlan(SpeakerCommandProcessor commandProcessor) {
-        CompletableFuture<MeterId> future = CompletableFuture.completedFuture(null);
+        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
         if (meterConfig != null) {
             future = planMeterVerify(commandProcessor)
-                    .thenApply(this::handleMeterReport);
+                    .thenCompose(this::handleMeterReport);
         }
-        return future.thenCompose(this::planOfFlowsVerify);
+
+        if (mirrorConfig != null) {
+            future.thenCompose(e -> planGroupVerify(commandProcessor))
+                    .thenApply(this::handleGroupReport);
+        }
+
+        return future.thenCompose(e -> planOfFlowsVerify());
     }
 
     private CompletableFuture<MeterInstallReport> planMeterInstall(SpeakerCommandProcessor commandProcessor) {
@@ -126,8 +152,7 @@ public abstract class IngressFlowSegmentBase extends FlowSegmentCommand {
         return commandProcessor.chain(meterCommand);
     }
 
-    private CompletableFuture<Void> planMeterRemove(
-            SpeakerCommandProcessor commandProcessor, MeterId effectiveMeterId) {
+    private CompletableFuture<Void> planMeterRemove(SpeakerCommandProcessor commandProcessor) {
         if (effectiveMeterId == null || !getRulesContext().isUpdateMeter()) {
             if (meterConfig != null) {
                 log.info(
@@ -153,7 +178,7 @@ public abstract class IngressFlowSegmentBase extends FlowSegmentCommand {
         return commandProcessor.chain(meterDryRun);
     }
 
-    private CompletableFuture<FlowSegmentReport> planOfFlowsInstall(MeterId effectiveMeterId) {
+    private CompletableFuture<FlowSegmentReport> planOfFlowsInstall() {
         if (effectiveMeterId == null && rulesContext != null && !rulesContext.isUpdateMeter()) {
             effectiveMeterId = getMeterConfig().getId();
         }
@@ -168,7 +193,7 @@ public abstract class IngressFlowSegmentBase extends FlowSegmentCommand {
                 .thenApply(ignore -> makeSuccessReport());
     }
 
-    private CompletableFuture<MeterId> planOfFlowsRemove(MeterId effectiveMeterId) {
+    private CompletableFuture<Void> planOfFlowsRemove() {
         List<OFFlowMod> ofMessages = new ArrayList<>(makeFlowModMessages(effectiveMeterId));
 
         List<CompletableFuture<?>> requests = new ArrayList<>(ofMessages.size());
@@ -178,25 +203,25 @@ public abstract class IngressFlowSegmentBase extends FlowSegmentCommand {
             }
         }
 
-        return CompletableFuture.allOf(requests.toArray(new CompletableFuture<?>[0]))
-                .thenApply(ignore -> effectiveMeterId);
+        return CompletableFuture.allOf(requests.toArray(new CompletableFuture<?>[0]));
     }
 
-    private CompletableFuture<FlowSegmentReport> planOfFlowsVerify(MeterId effectiveMeterId) {
+    private CompletableFuture<FlowSegmentReport> planOfFlowsVerify() {
         return makeVerifyPlan(makeFlowModMessages(effectiveMeterId));
     }
 
-    private MeterId handleMeterReport(MeterInstallReport report) {
+    private CompletableFuture<Void> handleMeterReport(MeterInstallReport report) {
         ensureMeterSuccess(report);
-        return report.getMeterId()
-                .orElse(null);
+        effectiveMeterId = report.getMeterId().orElse(null);
+        return CompletableFuture.completedFuture(null);
     }
 
-    private MeterId handleMeterReport(MeterVerifyReport report) {
+    private CompletableFuture<Void> handleMeterReport(MeterVerifyReport report) {
         ensureMeterSuccess(report);
-        return report.getSchema()
+        effectiveMeterId = report.getSchema()
                 .map(MeterSchema::getMeterId)
                 .orElse(null);
+        return CompletableFuture.completedFuture(null);
     }
 
     private void handleMeterRemoveReport(MeterRemoveReport report) {

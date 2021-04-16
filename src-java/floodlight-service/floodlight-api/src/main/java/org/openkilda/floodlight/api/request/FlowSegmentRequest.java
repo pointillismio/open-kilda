@@ -1,4 +1,4 @@
-/* Copyright 2019 Telstra Open Source
+/* Copyright 2021 Telstra Open Source
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.openkilda.floodlight.api.request;
 
 import org.openkilda.floodlight.model.FlowSegmentMetadata;
 import org.openkilda.messaging.MessageContext;
+import org.openkilda.model.MirrorConfig;
 import org.openkilda.model.SwitchId;
 import org.openkilda.model.cookie.Cookie;
 
@@ -36,10 +37,15 @@ public abstract class FlowSegmentRequest extends SpeakerRequest {
     @JsonProperty("metadata")
     protected final FlowSegmentMetadata metadata;
 
+    @JsonProperty("mirror_config")
+    protected final MirrorConfig mirrorConfig;
+
     public FlowSegmentRequest(
-            MessageContext context, SwitchId switchId, UUID commandId, @NonNull FlowSegmentMetadata metadata) {
+            MessageContext context, SwitchId switchId, UUID commandId, @NonNull FlowSegmentMetadata metadata,
+            MirrorConfig mirrorConfig) {
         super(context, switchId, commandId);
         this.metadata = metadata;
+        this.mirrorConfig = mirrorConfig;
     }
 
     @JsonIgnore

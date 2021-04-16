@@ -90,6 +90,14 @@ public interface FlowHsTopologyConfig extends AbstractTopologyConfig {
     @Default("30")
     int getSwapEndpointsHubTimeoutSeconds();
 
+    @Key("flow.create.mirror.point.hub.timeout.seconds")
+    @Default("30")
+    int getCreateMirrorPointHubTimeoutSeconds();
+
+    @Key("flow.create.mirror.point.speaker.timeout.seconds")
+    @Default("10")
+    int getCreateMirrorPointSpeakerTimeoutSeconds();
+
     @Key("flow.update.speaker.timeout.seconds")
     @Default("10")
     int getUpdateSpeakerTimeoutSeconds();

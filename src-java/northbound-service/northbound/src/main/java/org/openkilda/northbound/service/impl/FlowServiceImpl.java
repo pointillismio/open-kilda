@@ -24,6 +24,7 @@ import org.openkilda.messaging.command.CommandMessage;
 import org.openkilda.messaging.command.flow.CreateFlowLoopRequest;
 import org.openkilda.messaging.command.flow.DeleteFlowLoopRequest;
 import org.openkilda.messaging.command.flow.FlowDeleteRequest;
+import org.openkilda.messaging.command.flow.FlowMirrorPointCreateRequest;
 import org.openkilda.messaging.command.flow.FlowPathSwapRequest;
 import org.openkilda.messaging.command.flow.FlowPingRequest;
 import org.openkilda.messaging.command.flow.FlowRequest;
@@ -32,6 +33,7 @@ import org.openkilda.messaging.command.flow.FlowRerouteRequest;
 import org.openkilda.messaging.command.flow.SwapFlowEndpointRequest;
 import org.openkilda.messaging.error.ErrorType;
 import org.openkilda.messaging.error.MessageException;
+import org.openkilda.messaging.info.flow.FlowMirrorPointResponse;
 import org.openkilda.messaging.info.flow.FlowPingResponse;
 import org.openkilda.messaging.info.flow.FlowRerouteResponse;
 import org.openkilda.messaging.info.flow.FlowResponse;
@@ -77,6 +79,8 @@ import org.openkilda.northbound.dto.v1.flows.PingInput;
 import org.openkilda.northbound.dto.v1.flows.PingOutput;
 import org.openkilda.northbound.dto.v2.flows.FlowHistoryStatusesResponse;
 import org.openkilda.northbound.dto.v2.flows.FlowLoopResponse;
+import org.openkilda.northbound.dto.v2.flows.FlowMirrorPointCreatePayload;
+import org.openkilda.northbound.dto.v2.flows.FlowMirrorPointCreateResponseV2;
 import org.openkilda.northbound.dto.v2.flows.FlowPatchV2;
 import org.openkilda.northbound.dto.v2.flows.FlowRequestV2;
 import org.openkilda.northbound.dto.v2.flows.FlowRerouteResponseV2;
@@ -779,5 +783,22 @@ public class FlowServiceImpl implements FlowService {
         return messagingChannel.sendAndGet(flowHsTopic, message)
                 .thenApply(org.openkilda.messaging.info.flow.FlowResponse.class::cast)
                 .thenApply(flowMapper::toFlowLoopResponse);
+    }
+
+    @Override
+    public CompletableFuture<FlowMirrorPointCreateResponseV2> createFlowMirrorPoint(String flowId,
+             FlowMirrorPointCreatePayload request) {
+        logger.info("Processing flow mirror point creation: {}", request);
+
+        final String correlationId = RequestCorrelationId.getId();
+        FlowMirrorPointCreateRequest flowMirrorPointCreateRequest
+                = flowMapper.toFlowMirrorPointCreateRequest(flowId, request);
+
+        CommandMessage command = new CommandMessage(flowMirrorPointCreateRequest,
+                System.currentTimeMillis(), correlationId);
+
+        return messagingChannel.sendAndGet(flowHsTopic, command)
+                .thenApply(FlowMirrorPointResponse.class::cast)
+                .thenApply(flowMapper::toFlowMirrorPointCreateResponseV2);
     }
 }

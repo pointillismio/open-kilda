@@ -1,4 +1,4 @@
-/* Copyright 2019 Telstra Open Source
+/* Copyright 2021 Telstra Open Source
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ public abstract class IngressFlowLoopSegmentRequest extends FlowSegmentRequest {
     @SuppressWarnings("squid:S00107")
     protected IngressFlowLoopSegmentRequest(MessageContext context, UUID commandId, FlowSegmentMetadata metadata,
                                             FlowEndpoint endpoint) {
-        super(context, endpoint.getSwitchId(), commandId, metadata);
+        super(context, endpoint.getSwitchId(), commandId, metadata, null);
 
         this.endpoint = endpoint;
     }

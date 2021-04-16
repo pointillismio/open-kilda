@@ -1,4 +1,4 @@
-/* Copyright 2019 Telstra Open Source
+/* Copyright 2021 Telstra Open Source
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -1680,7 +1680,7 @@ class RecordHandler implements Runnable {
         IngressFlowSegmentInstallCommand command = new IngressFlowSegmentInstallCommand(
                 messageContext, EMPTY_COMMAND_ID, makeSegmentMetadata(request), endpoint, meterConfig,
                 request.getEgressSwitchId(), request.getOutputPort(), makeTransitEncapsulation(request),
-                new RulesContext());
+                new RulesContext(), null);
 
         return new FlowSegmentWrapperCommand(command, responseFactory);
     }
@@ -1708,7 +1708,7 @@ class RecordHandler implements Runnable {
                 request.getOutputInnerVlanId());
         EgressFlowSegmentInstallCommand command = new EgressFlowSegmentInstallCommand(
                 messageContext, EMPTY_COMMAND_ID, makeSegmentMetadata(request), endpoint, request.getIngressEndpoint(),
-                request.getInputPort(), makeTransitEncapsulation(request));
+                request.getInputPort(), makeTransitEncapsulation(request), null);
 
         return new FlowSegmentWrapperCommand(command, responseFactory);
     }

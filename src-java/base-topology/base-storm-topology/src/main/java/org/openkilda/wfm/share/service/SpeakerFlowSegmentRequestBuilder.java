@@ -30,11 +30,15 @@ import org.openkilda.floodlight.model.RulesContext;
 import org.openkilda.messaging.MessageContext;
 import org.openkilda.model.Flow;
 import org.openkilda.model.FlowEncapsulationType;
+import org.openkilda.model.FlowMirrorPoints;
 import org.openkilda.model.FlowPath;
 import org.openkilda.model.FlowPathDirection;
 import org.openkilda.model.FlowTransitEncapsulation;
 import org.openkilda.model.IslEndpoint;
 import org.openkilda.model.MeterConfig;
+import org.openkilda.model.MirrorConfig;
+import org.openkilda.model.MirrorConfig.MirrorConfigData;
+import org.openkilda.model.NetworkEndpoint;
 import org.openkilda.model.PathId;
 import org.openkilda.model.PathSegment;
 import org.openkilda.model.cookie.Cookie;
@@ -54,7 +58,9 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class SpeakerFlowSegmentRequestBuilder implements FlowCommandBuilder {
@@ -272,6 +278,7 @@ public class SpeakerFlowSegmentRequestBuilder implements FlowCommandBuilder {
             RulesContext rulesContext) {
         PathSegmentSide segmentSide = makePathSegmentSourceSide(segment);
 
+
         UUID commandId = commandIdGenerator.generate();
         MessageContext messageContext = new MessageContext(commandId.toString(), context.getCorrelationId());
         return IngressFlowSegmentRequestFactory.builder()
@@ -288,6 +295,7 @@ public class SpeakerFlowSegmentRequestBuilder implements FlowCommandBuilder {
                 .islPort(segmentSide.getEndpoint().getPortNumber())
                 .encapsulation(encapsulation)
                 .rulesContext(rulesContext)
+                .mirrorConfig(makeMirrorConfig(path, segmentSide.getEndpoint()))
                 .build();
     }
 
@@ -390,6 +398,7 @@ public class SpeakerFlowSegmentRequestBuilder implements FlowCommandBuilder {
                 .ingressEndpoint(ingressFlowSide.getEndpoint())
                 .islPort(segmentSide.getEndpoint().getPortNumber())
                 .encapsulation(encapsulation)
+                .mirrorConfig(makeMirrorConfig(path, flowSide.getEndpoint()))
                 .build();
     }
 
@@ -462,5 +471,33 @@ public class SpeakerFlowSegmentRequestBuilder implements FlowCommandBuilder {
                 .orElseThrow(() -> new IllegalStateException(format(
                         "No encapsulation resources found for flow path %s (opposite: %s)", pathId, oppositePathId)));
         return new FlowTransitEncapsulation(resources.getTransitEncapsulationId(), resources.getEncapsulationType());
+    }
+
+    private MirrorConfig makeMirrorConfig(@NonNull FlowPath flowPath, @NonNull NetworkEndpoint endpoint) {
+        MirrorConfig mirrorConfig = null;
+        FlowMirrorPoints flowMirrorPoints = flowPath.getFlowMirrorPointsSet().stream()
+                .filter(mirrorPoints -> endpoint.getSwitchId().equals(mirrorPoints.getMirrorSwitchId()))
+                .findFirst().orElse(null);
+
+        if (flowMirrorPoints != null) {
+            Set<MirrorConfigData> mirrorConfigDataSet = flowMirrorPoints.getMirrorPaths().stream()
+                    .map(mirrorPath -> new MirrorConfigData(mirrorPath.getDestPort(), mirrorPath.getDestVlan()))
+                    .collect(Collectors.toSet());
+
+            if (!mirrorConfigDataSet.isEmpty()) {
+                mirrorConfig = MirrorConfig.builder()
+                        .groupId(flowMirrorPoints.getMirrorGroupId())
+                        .mainPort(endpoint.getPortNumber())
+                        .mirrorConfigDataSet(mirrorConfigDataSet)
+                        .build();
+            } else {
+                mirrorConfig = MirrorConfig.builder()
+                        .groupId(flowMirrorPoints.getMirrorGroupId())
+                        .cleanExcessGroup(true)
+                        .build();
+            }
+        }
+
+        return mirrorConfig;
     }
 }

@@ -1,4 +1,4 @@
-/* Copyright 2019 Telstra Open Source
+/* Copyright 2021 Telstra Open Source
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
  *   you may not use this file except in compliance with the License.
@@ -25,7 +25,9 @@ import org.openkilda.floodlight.utils.OfFlowModBuilderFactory;
 import org.openkilda.messaging.MessageContext;
 import org.openkilda.model.FlowEndpoint;
 import org.openkilda.model.FlowTransitEncapsulation;
+import org.openkilda.model.MirrorConfig;
 
+import com.google.common.collect.ImmutableList;
 import lombok.Getter;
 import lombok.NonNull;
 import org.projectfloodlight.openflow.protocol.OFFactory;
@@ -47,24 +49,64 @@ abstract class EgressFlowSegmentCommand extends NotIngressFlowSegmentCommand {
     EgressFlowSegmentCommand(
             MessageContext messageContext, UUID commandId, FlowSegmentMetadata metadata,
             @NonNull FlowEndpoint endpoint, @NonNull FlowEndpoint ingressEndpoint, int islPort,
-            FlowTransitEncapsulation encapsulation, OfFlowModBuilderFactory flowModBuilderFactory) {
+            FlowTransitEncapsulation encapsulation, OfFlowModBuilderFactory flowModBuilderFactory,
+            MirrorConfig mirrorConfig) {
         super(
                 messageContext, endpoint.getSwitchId(), commandId, metadata, islPort, encapsulation,
-                flowModBuilderFactory);
+                flowModBuilderFactory, mirrorConfig);
         this.endpoint = endpoint;
         this.ingressEndpoint = ingressEndpoint;
     }
 
-    @Override
-    protected CompletableFuture<FlowSegmentReport> makeExecutePlan(
-            SpeakerCommandProcessor commandProcessor) {
+    protected CompletableFuture<FlowSegmentReport> makeInstallPlan(SpeakerCommandProcessor commandProcessor) {
+        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
+        if (mirrorConfig != null) {
+            future.thenCompose(e -> planGroupDryRun(commandProcessor))
+                    .thenCompose(this::handleGroupReport)
+                    .thenCompose(e -> planGroupRemove(commandProcessor));
+
+            if (!mirrorConfig.isCleanExcessGroup()) {
+                future.thenCompose(e -> planGroupInstall(commandProcessor))
+                        .thenCompose(this::handleGroupReport);
+            }
+        }
+        return future.thenCompose(e -> planOfFlowSwitchCommand())
+                .thenApply(ignore -> makeSuccessReport());
+    }
+
+    protected CompletableFuture<FlowSegmentReport> makeRemovePlan(SpeakerCommandProcessor commandProcessor) {
+        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
+        if (mirrorConfig != null) {
+            future.thenCompose(e -> planGroupDryRun(commandProcessor))
+                    .thenCompose(this::handleGroupReport);
+        }
+
+        return future.thenCompose(e -> planOfFlowSwitchCommand())
+                .thenCompose(e -> planGroupRemove(commandProcessor))
+                .thenApply(ignore -> makeSuccessReport());
+    }
+
+    protected CompletableFuture<FlowSegmentReport> makeVerifyPlan(SpeakerCommandProcessor commandProcessor) {
+        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
+        if (mirrorConfig != null) {
+            future.thenCompose(e -> planGroupVerify(commandProcessor))
+                    .thenApply(this::handleGroupReport);
+        }
+
+        return future.thenCompose(e -> planOfFlowVerify());
+    }
+
+    private CompletableFuture<Void> planOfFlowSwitchCommand() {
         try (Session session = getSessionService().open(messageContext, getSw())) {
-            return session.write(makeEgressModMessage())
-                    .thenApply(ignore -> makeSuccessReport());
+            return CompletableFuture.allOf(session.write(makeEgressModMessage()));
         }
     }
 
-    protected OFFlowMod makeEgressModMessage() {
+    private CompletableFuture<FlowSegmentReport> planOfFlowVerify() {
+        return makeVerifyPlan(ImmutableList.of(makeEgressModMessage()));
+    }
+
+    private OFFlowMod makeEgressModMessage() {
         OFFactory of = getSw().getOFFactory();
 
         return flowModBuilderFactory.makeBuilder(of, TableId.of(SwitchManager.EGRESS_TABLE_ID))

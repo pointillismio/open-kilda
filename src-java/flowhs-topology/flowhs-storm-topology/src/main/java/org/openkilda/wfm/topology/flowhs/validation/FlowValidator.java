@@ -31,6 +31,7 @@ import org.openkilda.persistence.repositories.SwitchPropertiesRepository;
 import org.openkilda.persistence.repositories.SwitchRepository;
 import org.openkilda.wfm.topology.flowhs.mapper.RequestedFlowMapper;
 import org.openkilda.wfm.topology.flowhs.model.RequestedFlow;
+import org.openkilda.wfm.topology.flowhs.model.RequestedFlowMirrorPoint;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Sets;
@@ -113,7 +114,7 @@ public class FlowValidator {
         final FlowEndpoint destination = RequestedFlowMapper.INSTANCE.mapDest(flow);
 
         checkOneSwitchFlowConflict(source, destination);
-        checkSwitchesExistsAndActive(flow);
+        checkSwitchesExistsAndActive(flow.getSrcSwitch(), flow.getDestSwitch());
 
         for (EndpointDescriptor descriptor : new EndpointDescriptor[]{
                 EndpointDescriptor.makeSource(source),
@@ -174,6 +175,11 @@ public class FlowValidator {
         }
     }
 
+    private void checkFlowForFlowConflicts(EndpointDescriptor descriptor)
+            throws InvalidFlowException {
+        checkFlowForFlowConflicts(null, descriptor, new HashSet<>());
+    }
+
     /**
      * Checks a flow for endpoints' conflicts.
      *
@@ -184,7 +190,7 @@ public class FlowValidator {
         final FlowEndpoint endpoint = descriptor.getEndpoint();
 
         for (Flow entry : flowRepository.findByEndpoint(endpoint.getSwitchId(), endpoint.getPortNumber())) {
-            if (flowId.equals(entry.getFlowId()) || bulkUpdateFlowIds.contains(entry.getFlowId())) {
+            if (flowId != null && (flowId.equals(entry.getFlowId()) || bulkUpdateFlowIds.contains(entry.getFlowId()))) {
                 continue;
             }
 
@@ -213,13 +219,13 @@ public class FlowValidator {
     /**
      * Ensure switches are exists.
      *
-     * @param flow a flow to be validated.
+     * @param sourceId source flow switch id to be validated.
+     * @param destinationId destination flow switch id to be validated.
      * @throws UnavailableFlowEndpointException if switch not found.
      */
     @VisibleForTesting
-    void checkSwitchesExistsAndActive(RequestedFlow flow) throws UnavailableFlowEndpointException {
-        final SwitchId sourceId = flow.getSrcSwitch();
-        final SwitchId destinationId = flow.getDestSwitch();
+    void checkSwitchesExistsAndActive(SwitchId sourceId, SwitchId destinationId)
+            throws UnavailableFlowEndpointException {
 
         boolean sourceSwitchAvailable;
         boolean destinationSwitchAvailable;
@@ -387,5 +393,24 @@ public class FlowValidator {
         private static EndpointDescriptor makeDestination(FlowEndpoint endpoint) {
             return new EndpointDescriptor(endpoint, "destination");
         }
+    }
+
+    /**
+     * Validate the flow mirror point.
+     */
+    public void flowMirrorPointValidate(RequestedFlowMirrorPoint mirrorPoint)
+            throws InvalidFlowException, UnavailableFlowEndpointException {
+
+        checkSwitchesExistsAndActive(mirrorPoint.getMirrorPointSwitchId(), mirrorPoint.getReceiverPointSwitchId());
+
+        EndpointDescriptor destinationDescriptor = EndpointDescriptor.makeDestination(FlowEndpoint.builder()
+                .switchId(mirrorPoint.getReceiverPointSwitchId())
+                .portNumber(mirrorPoint.getReceiverPointPort())
+                .outerVlanId(mirrorPoint.getReceiverPointVlan())
+                .build());
+
+        checkForMultiTableRequirement(destinationDescriptor);
+        checkFlowForIslConflicts(destinationDescriptor);
+        checkFlowForFlowConflicts(destinationDescriptor);
     }
 }

@@ -18,12 +18,24 @@ package org.openkilda.floodlight.command.flow;
 import org.openkilda.floodlight.KildaCore;
 import org.openkilda.floodlight.KildaCoreConfig;
 import org.openkilda.floodlight.command.SpeakerCommand;
+import org.openkilda.floodlight.command.SpeakerCommandProcessor;
+import org.openkilda.floodlight.command.SpeakerCommandReport;
+import org.openkilda.floodlight.command.group.GroupInstallCommand;
+import org.openkilda.floodlight.command.group.GroupInstallDryRunCommand;
+import org.openkilda.floodlight.command.group.GroupInstallReport;
+import org.openkilda.floodlight.command.group.GroupRemoveCommand;
+import org.openkilda.floodlight.command.group.GroupRemoveReport;
+import org.openkilda.floodlight.command.group.GroupVerifyCommand;
+import org.openkilda.floodlight.command.group.GroupVerifyReport;
 import org.openkilda.floodlight.error.SwitchMissingFlowsException;
+import org.openkilda.floodlight.error.UnsupportedSwitchOperationException;
 import org.openkilda.floodlight.model.FlowSegmentMetadata;
 import org.openkilda.floodlight.service.FeatureDetectorService;
 import org.openkilda.floodlight.utils.OfFlowDumpProducer;
 import org.openkilda.floodlight.utils.OfFlowPresenceVerifier;
 import org.openkilda.messaging.MessageContext;
+import org.openkilda.model.GroupId;
+import org.openkilda.model.MirrorConfig;
 import org.openkilda.model.SwitchFeature;
 import org.openkilda.model.SwitchId;
 import org.openkilda.model.cookie.Cookie;
@@ -46,6 +58,7 @@ public abstract class FlowSegmentCommand extends SpeakerCommand<FlowSegmentRepor
 
     // payload
     protected final FlowSegmentMetadata metadata;
+    protected final MirrorConfig mirrorConfig;
 
     // operation data
     @Getter(AccessLevel.PROTECTED)
@@ -54,11 +67,15 @@ public abstract class FlowSegmentCommand extends SpeakerCommand<FlowSegmentRepor
     @Getter(AccessLevel.PROTECTED)
     private KildaCoreConfig kildaCoreConfig;
 
+    private GroupId effectiveGroupId;
+
     public FlowSegmentCommand(
-            MessageContext messageContext, SwitchId switchId, UUID commandId, @NonNull FlowSegmentMetadata metadata) {
+            MessageContext messageContext, SwitchId switchId, UUID commandId, @NonNull FlowSegmentMetadata metadata,
+            MirrorConfig mirrorConfig) {
         super(messageContext, switchId, commandId);
 
         this.metadata = metadata;
+        this.mirrorConfig = mirrorConfig;
     }
 
     @Override
@@ -96,6 +113,73 @@ public abstract class FlowSegmentCommand extends SpeakerCommand<FlowSegmentRepor
         return new FlowSegmentReport(
                 this, new SwitchMissingFlowsException(
                         getSw().getId(), metadata, expected, missing));
+    }
+
+    protected CompletableFuture<GroupInstallReport> planGroupInstall(SpeakerCommandProcessor commandProcessor) {
+        GroupInstallCommand groupCommand = new GroupInstallCommand(messageContext, switchId, mirrorConfig);
+
+        return commandProcessor.chain(groupCommand);
+    }
+
+    protected CompletableFuture<Void> planGroupRemove(
+            SpeakerCommandProcessor commandProcessor) {
+        if (effectiveGroupId == null) {
+            if (mirrorConfig != null) {
+                log.info(
+                        "Do not remove group {} on {} - switch does not support groups (i.e. it was not installed "
+                                + "during flow segment install stage",
+                        mirrorConfig, switchId);
+            }
+            return CompletableFuture.completedFuture(null);
+        }
+
+        GroupRemoveCommand removeCommand = new GroupRemoveCommand(messageContext, switchId, mirrorConfig.getGroupId());
+        return commandProcessor.chain(removeCommand)
+                .thenAccept(this::handleGroupRemoveReport);
+    }
+
+    protected CompletableFuture<GroupInstallReport> planGroupDryRun(SpeakerCommandProcessor commandProcessor) {
+        GroupInstallDryRunCommand groupDryRun = new GroupInstallDryRunCommand(messageContext, switchId, mirrorConfig);
+        return commandProcessor.chain(groupDryRun);
+    }
+
+    protected CompletableFuture<GroupVerifyReport> planGroupVerify(SpeakerCommandProcessor commandProcessor) {
+        GroupVerifyCommand groupVerify = new GroupVerifyCommand(messageContext, switchId, mirrorConfig);
+        return commandProcessor.chain(groupVerify);
+    }
+
+    protected CompletableFuture<Void> handleGroupReport(GroupInstallReport report) {
+        ensureGroupSuccess(report);
+        effectiveGroupId = report.getGroupId().orElse(null);
+        return CompletableFuture.completedFuture(null);
+    }
+
+    protected GroupId handleGroupReport(GroupVerifyReport report) {
+        ensureGroupSuccess(report);
+        return report.getMirrorConfig().get().getGroupId();
+    }
+
+    protected void handleGroupRemoveReport(GroupRemoveReport report) {
+        try {
+            report.raiseError();
+        } catch (UnsupportedSwitchOperationException e) {
+            log.info("Do not remove group id {} from {} - {}", mirrorConfig.getGroupId(), switchId, e.getMessage());
+        } catch (Exception e) {
+            throw maskCallbackException(e);
+        }
+    }
+
+    protected void ensureGroupSuccess(SpeakerCommandReport report) {
+        try {
+            report.raiseError();
+        } catch (UnsupportedSwitchOperationException e) {
+            log.info(
+                    "Group id {} on {} ignored by command {} - - {}",
+                    mirrorConfig.getGroupId(), switchId, getClass().getCanonicalName(), e.getMessage());
+            // switch do not support groups, setup rules without meter
+        } catch (Exception e) {
+            throw maskCallbackException(e);
+        }
     }
 
     public Cookie getCookie() {

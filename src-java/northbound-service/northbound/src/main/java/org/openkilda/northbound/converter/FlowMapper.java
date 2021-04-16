@@ -15,10 +15,12 @@
 
 package org.openkilda.northbound.converter;
 
+import org.openkilda.messaging.command.flow.FlowMirrorPointCreateRequest;
 import org.openkilda.messaging.command.flow.FlowRequest;
 import org.openkilda.messaging.command.flow.FlowRequest.Type;
 import org.openkilda.messaging.info.event.PathInfoData;
 import org.openkilda.messaging.info.event.PathNode;
+import org.openkilda.messaging.info.flow.FlowMirrorPointResponse;
 import org.openkilda.messaging.info.flow.FlowPingResponse;
 import org.openkilda.messaging.info.flow.FlowResponse;
 import org.openkilda.messaging.info.flow.UniFlowPingResponse;
@@ -53,6 +55,8 @@ import org.openkilda.northbound.dto.v2.flows.DetectConnectedDevicesV2;
 import org.openkilda.northbound.dto.v2.flows.FlowEndpointV2;
 import org.openkilda.northbound.dto.v2.flows.FlowHistoryStatus;
 import org.openkilda.northbound.dto.v2.flows.FlowLoopResponse;
+import org.openkilda.northbound.dto.v2.flows.FlowMirrorPointCreatePayload;
+import org.openkilda.northbound.dto.v2.flows.FlowMirrorPointCreateResponseV2;
 import org.openkilda.northbound.dto.v2.flows.FlowPatchEndpoint;
 import org.openkilda.northbound.dto.v2.flows.FlowPatchV2;
 import org.openkilda.northbound.dto.v2.flows.FlowPathV2;
@@ -513,4 +517,14 @@ public abstract class FlowMapper {
     @Mapping(target = "timestamp",
             expression = "java(DateTimeFormatter.ISO_INSTANT.format(entry.getStatusChangeTimestamp()))")
     public abstract FlowHistoryStatus toFlowHistoryStatus(FlowStatusTimestampsEntry entry);
+
+    @Mapping(target = "receiverPointSwitchId", source = "payload.receiverPoint.switchId")
+    @Mapping(target = "receiverPointPort", source = "payload.receiverPoint.port")
+    @Mapping(target = "receiverPointVlan", source = "payload.receiverPoint.vlan")
+    public abstract FlowMirrorPointCreateRequest toFlowMirrorPointCreateRequest(String flowId,
+                                                                                FlowMirrorPointCreatePayload payload);
+
+    @Mapping(target = "receiverPoint", expression = "java(new ReceiverPoint("
+            + "response.getReceiverPointSwitchId(), response.getReceiverPointPort(), response.getReceiverPointVlan()))")
+    public abstract FlowMirrorPointCreateResponseV2 toFlowMirrorPointCreateResponseV2(FlowMirrorPointResponse response);
 }

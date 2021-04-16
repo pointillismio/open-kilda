@@ -28,6 +28,7 @@ import com.google.common.collect.ImmutableList;
 import net.floodlightcontroller.core.IOFSwitch;
 import org.projectfloodlight.openflow.protocol.action.OFAction;
 import org.projectfloodlight.openflow.protocol.instruction.OFInstruction;
+import org.projectfloodlight.openflow.types.OFGroup;
 import org.projectfloodlight.openflow.types.OFPort;
 import org.projectfloodlight.openflow.types.TableId;
 
@@ -52,7 +53,11 @@ public abstract class IngressInstallFlowModFactory extends IngressFlowModFactory
         }
 
         applyActions.addAll(makeTransformActions(vlanStack));
-        applyActions.add(makeOutputAction());
+        if (command.getMirrorConfig() == null || command.getMirrorConfig().isCleanExcessGroup()) {
+            applyActions.add(makeOutputAction());
+        } else {
+            applyActions.add(of.actions().group(OFGroup.of(command.getMirrorConfig().getGroupId().intValue())));
+        }
 
         instructions.add(of.instructions().applyActions(applyActions));
         if (command.getMetadata().isMultiTable()) {
